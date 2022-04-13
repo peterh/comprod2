@@ -1,33 +1,81 @@
 package state
 
 import (
-	"crypto/hmac"
+	"bytes"
 	"crypto/rand"
-	"crypto/sha1"
 	"crypto/subtle"
 	"encoding/binary"
-	"hash"
 	"io"
 	"log"
 	"sync"
 
 	"golang.org/x/crypto/argon2"
+	"golang.org/x/crypto/sha3"
 )
 
 // newKey must be called under the lock (or in a context
 // where the lock is unnecessary)
 func (g *GameState) newKey() {
-	g.Key = make([]byte, sha1.Size)
+	g.Key = make([]byte, 256/8)
 	_, err := io.ReadFull(rand.Reader, g.Key)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-func (g *Game) GetHash() hash.Hash {
+func leftEncode(encbuf []byte, value uint64) []byte {
+	var n uint
+
+	for v := value; v > 0 && n < 8; v >>= 8 {
+		n++
+	}
+	if n == 0 {
+		n = 1
+	}
+	encbuf = append(encbuf, byte(n))
+	for i := uint(1); i <= n; i++ {
+		encbuf = append(encbuf, byte(value>>(8*(n-i))))
+	}
+	return encbuf
+}
+
+func rightEncode(encbuf []byte, value uint64) []byte {
+	var n uint
+
+	for v := value; v > 0 && (n < 8); v >>= 8 {
+		n++
+	}
+	if n == 0 {
+		n = 1
+	}
+	for i := uint(1); i <= n; i++ {
+		encbuf = append(encbuf, byte(value>>(8*(n-i))))
+	}
+	encbuf = append(encbuf, byte(n))
+	return encbuf
+}
+
+func KMAC128(separator string, key, data []byte, outBits int) []byte {
+	const pad = 168 // key pad length for KMAC128
+	hash := sha3.NewCShake128([]byte("KMAC"), []byte(separator))
+	buf := leftEncode(nil, pad)
+	buf = leftEncode(buf, uint64(len(key))*8)
+	hash.Write(buf)
+	hash.Write(key)
+	if len(key) < pad {
+		hash.Write(bytes.Repeat([]byte{0}, pad-len(key)))
+	}
+	hash.Write(data)
+	hash.Write(rightEncode(buf[:0], uint64(outBits)))
+	out := make([]byte, (outBits+7)/8)
+	hash.Read(out)
+	return out
+}
+
+func (g *Game) Hash(thing, name string) []byte {
 	g.Lock()
 	defer g.Unlock()
-	return hmac.New(sha1.New, g.g.Key)
+	return KMAC128(thing, g.g.Key, []byte(name), 160)
 }
 
 func GetSeed() (rv int64) {
