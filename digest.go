@@ -23,12 +23,3 @@ func cookieHash(g *state.Game, name string) string {
 func inviteHash(g *state.Game, name string) string {
 	return doHash(g, "invite:", name)
 }
-
-func pwdHash(g *state.Game, name, password string) []byte {
-	digest := g.GetHash()
-	io.WriteString(digest, "password/")
-	io.WriteString(digest, name)
-	io.WriteString(digest, ":")
-	io.WriteString(digest, password)
-	return digest.Sum(nil)
-}

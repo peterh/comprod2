@@ -1,7 +1,6 @@
 package state
 
 import (
-	"bytes"
 	"encoding/gob"
 	"fmt"
 	"math/rand"
@@ -18,7 +17,9 @@ const startingCash = 100000
 type Player struct {
 	Cash     uint64
 	Shares   [stockTypes]uint64
+	PWHash   string
 	Password []byte
+	Salt     []byte
 }
 
 type Stock struct {
@@ -113,19 +114,6 @@ func (p *PlayerInfo) Sell(stock string, lots uint64) error {
 	p.Cash = p.p.Cash
 	p.Shares[idx] = p.p.Shares[idx]
 	return nil
-}
-
-func (p *PlayerInfo) SetPassword(pw []byte) {
-	p.g.Lock()
-	p.p.Password = pw
-	p.g.Unlock()
-	p.g.changed <- struct{}{}
-}
-
-func (p *PlayerInfo) CheckPassword(pw []byte) bool {
-	p.g.Lock()
-	defer p.g.Unlock()
-	return bytes.Equal(p.p.Password, pw)
 }
 
 func (g *Game) ListStocks() []Stock {

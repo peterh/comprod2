@@ -100,7 +100,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		p := h.g.Player(name)
-		p.SetPassword(pwdHash(h.g, name, pw))
+		p.SetPassword(pw)
 		http.SetCookie(w, &http.Cookie{Name: "id", Value: name + "/" + cookieHash(h.g, name)})
 	} else if len(name) > 1 {
 		// User login
@@ -109,7 +109,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		p := h.g.Player(name)
-		if !p.CheckPassword(pwdHash(h.g, name, pw)) {
+		if !p.CheckPassword(pw) {
 			h.err.Execute(w, &errorReason{"Invalid password or unknown user"})
 			return
 		}
@@ -351,7 +351,7 @@ func (np *newpwer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(pw) > 1 {
 		// Password Change
 		old := r.FormValue("oldpw")
-		if !p.CheckPassword(pwdHash(np.g, name, old)) {
+		if !p.CheckPassword(old) {
 			np.err.Execute(w, &errorReason{"Invalid password"})
 			return
 		}
@@ -360,7 +360,7 @@ func (np *newpwer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			np.err.Execute(w, &errorReason{"New passwords do not match"})
 			return
 		}
-		p.SetPassword(pwdHash(np.g, name, pw))
+		p.SetPassword(pw)
 		d.Success = true
 	}
 
