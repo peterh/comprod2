@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/peterh/comprod/state"
+	"github.com/peterh/comprod2/state"
 )
 
 type handler struct {

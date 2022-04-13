@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/peterh/comprod/state"
+	"github.com/peterh/comprod2/state"
 )
 
 func doHash(g *state.Game, thing, name string) string {
