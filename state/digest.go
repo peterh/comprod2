@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"log"
 	"sync"
@@ -13,14 +14,13 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-// newKey must be called under the lock (or in a context
-// where the lock is unnecessary)
-func (g *GameState) newKey() {
-	g.Key = make([]byte, 256/8)
-	_, err := io.ReadFull(rand.Reader, g.Key)
+func newKey() []byte {
+	key := make([]byte, 256/8)
+	_, err := io.ReadFull(rand.Reader, key)
 	if err != nil {
 		log.Fatal(err)
 	}
+	return key
 }
 
 func leftEncode(encbuf []byte, value uint64) []byte {
@@ -73,9 +73,7 @@ func KMAC128(separator string, key, data []byte, outBits int) []byte {
 }
 
 func (g *Game) Hash(thing, name string) []byte {
-	g.Lock()
-	defer g.Unlock()
-	return KMAC128(thing, g.g.Key, []byte(name), 160)
+	return KMAC128(thing, g.getKey(), []byte(name), 160)
 }
 
 func GetSeed() (rv int64) {
@@ -94,25 +92,27 @@ func pwdHash(salt []byte, password string) []byte {
 }
 
 func (p *PlayerInfo) SetPassword(pw string) {
-	p.g.Lock()
-	if len(p.p.Salt) < (256 / 8) {
-		p.p.Salt = make([]byte, 256/8)
-	}
-	rand.Read(p.p.Salt)
-	p.p.PWHash = "argon2"
-	p.p.Password = pwdHash(p.p.Salt, pw)
-	p.g.Unlock()
-	p.g.changed <- struct{}{}
+	salt := make([]byte, 256/8)
+	rand.Read(salt)
+	password := pwdHash(salt, pw)
+	p.g.setPassword.Exec(p.playerID, "argon2", salt, password)
 }
 
 func (p *PlayerInfo) CheckPassword(pw string) bool {
-	p.g.Lock()
-	defer p.g.Unlock()
-	switch p.p.PWHash {
+	row := p.g.getPassword.QueryRow(p.playerID)
+	var hash string
+	var salt, password []byte
+	err := row.Scan(&hash, &salt, &password)
+	if err != nil {
+		fmt.Println(err)
+		return false
+	}
+	switch hash {
 	case "argon2":
-		pwh := pwdHash(p.p.Salt, pw)
-		return subtle.ConstantTimeCompare(p.p.Password, pwh) == 1
+		pwh := pwdHash(salt, pw)
+		return subtle.ConstantTimeCompare(password, pwh) == 1
 	default:
+		fmt.Println("No hash ", hash)
 		// Unrecognized password hash
 		return false
 	}

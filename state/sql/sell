@@ -1,0 +1,3 @@
+UPDATE Holding SET Value = Value + ?3 * (SELECT Value FROM Stock WHERE StockID = ?2)
+    WHERE PlayerID = ?1 AND Stock = 'Cash';
+UPDATE Holding SET Value = Value - ?3 WHERE PlayerID = ?1 AND Stock = ?2 RETURNING Value;

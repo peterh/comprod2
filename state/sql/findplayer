@@ -1,0 +1,1 @@
+SELECT PlayerID FROM Player WHERE Name = ?1

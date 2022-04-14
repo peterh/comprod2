@@ -1,0 +1,1 @@
+INSERT INTO Stock (StockID, Name, Value) VALUES (?1, ?2, ?3)

@@ -91,7 +91,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.err.Execute(w, &errorReason{"Invalid invitation"})
 			return
 		}
-		if h.g.HasPlayer(name) {
+		p := h.g.NewPlayer(name)
+		if p == nil {
 			h.err.Execute(w, &errorReason{"You are already registered"})
 			return
 		}
@@ -99,17 +100,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.err.Execute(w, &errorReason{"Please select a longer password"})
 			return
 		}
-		p := h.g.Player(name)
 		p.SetPassword(pw)
 		http.SetCookie(w, &http.Cookie{Name: "id", Value: name + "/" + cookieHash(h.g, name)})
 	} else if len(name) > 1 {
 		// User login
-		if !h.g.HasPlayer(name) {
-			h.err.Execute(w, &errorReason{"Invalid password or unknown user"})
-			return
-		}
 		p := h.g.Player(name)
-		if !p.CheckPassword(pw) {
+		// Don't do this in real code, by calculating the password hash after checking
+		// for the presence of a user, an attacker can test for the presence of a user.
+		if p == nil || !p.CheckPassword(pw) {
 			h.err.Execute(w, &errorReason{"Invalid password or unknown user"})
 			return
 		}
@@ -182,17 +180,18 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s := h.g.ListStocks()
 	d := &data{Name: name, News: h.g.News(), Leader: formatInfo(h.g.Leaders(), thinsp)}
 	d.Invite = name == *admin
-	nw := p.Cash
+	ph := p.Holdings()
+	nw := ph.Cash
 	for k, v := range s {
 		d.Stocks = append(d.Stocks, entry{
 			Name:   v.Name,
 			Cost:   v.Value,
-			Shares: p.Shares[k],
-			Value:  formatValue(p.Shares[k]*v.Value, thinsp),
+			Shares: ph.Shares[k],
+			Value:  formatValue(ph.Shares[k]*v.Value, thinsp),
 		})
-		nw += p.Shares[k] * v.Value
+		nw += ph.Shares[k] * v.Value
 	}
-	d.Cash = formatValue(p.Cash, thinsp)
+	d.Cash = formatValue(ph.Cash, thinsp)
 	d.NetWorth = formatValue(nw, thinsp)
 	h.t.Execute(w, d)
 }
@@ -281,7 +280,10 @@ func (a *adminer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	i := strings.LastIndex(c.Value, "/")
-	name := c.Value[:i]
+	name := ""
+	if i >= 0 {
+		name = c.Value[:i]
+	}
 	if len(name) < 1 || c.Value[i+1:] != cookieHash(a.g, name) {
 		login(w, r)
 		return

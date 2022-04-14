@@ -1,0 +1,2 @@
+DELETE FROM Player WHERE PlayerID = ?1;
+DELETE FROM Holding WHERE PlayerID = ?1;

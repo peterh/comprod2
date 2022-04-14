@@ -1,0 +1,1 @@
+INSERT OR REPLACE INTO Game (Key, Value) VALUES (?1, ?2)

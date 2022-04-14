@@ -1,0 +1,1 @@
+SELECT Value FROM Holding WHERE PlayerID = ?1 AND Stock = ?2

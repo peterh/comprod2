@@ -1,0 +1,1 @@
+INSERT INTO News(Text) VALUES (?1)

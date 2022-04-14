@@ -1,0 +1,1 @@
+UPDATE Stock SET Name = ?2 WHERE StockID = ?1

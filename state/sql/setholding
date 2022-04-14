@@ -1,0 +1,1 @@
+INSERT OR REPLACE INTO Holding (PlayerID, Stock, Value) VALUES (?1, ?2, ?3)

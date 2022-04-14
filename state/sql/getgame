@@ -1,0 +1,1 @@
+SELECT Value FROM Game WHERE Key = ?1

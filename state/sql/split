@@ -1,0 +1,1 @@
+UPDATE Holding SET Value = Value * 2 WHERE Stock = ?1

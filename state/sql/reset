@@ -1,0 +1,5 @@
+DELETE FROM Holding;
+DELETE FROM Stock;
+INSERT INTO Holding (PlayerID, Stock, Value) SELECT PlayerID, 'Cash', ?1 FROM Player;
+INSERT INTO News (Text) VALUES ('A new season started');
+VACUUM;

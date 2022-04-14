@@ -1,0 +1,5 @@
+SELECT Player.Name, SUM(Holding.Value * ifnull(Stock.Value, 1))
+    FROM Holding
+        INNER JOIN Player ON Holding.PlayerID = Player.PlayerID
+        LEFT JOIN Stock ON Stock.StockID = Holding.Stock
+    GROUP BY Player.PlayerID;

@@ -1,12 +1,14 @@
 package state
 
 import (
-	"encoding/gob"
+	"database/sql"
+	_ "embed"
 	"fmt"
+	"log"
 	"math/rand"
-	"os"
-	"sync"
-	"time"
+
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 const stockTypes = 6
@@ -14,12 +16,87 @@ const startingValue = 100
 const splitValue = startingValue * 2
 const startingCash = 100000
 
-type Player struct {
-	Cash     uint64
-	Shares   [stockTypes]uint64
-	PWHash   string
-	Password []byte
-	Salt     []byte
+//go:embed sql/create
+var sqlCreate string
+
+//go:embed sql/getgame
+var getGame string
+
+//go:embed sql/setgame
+var setGame string
+
+//go:embed sql/setpassword
+var setPassword string
+
+//go:embed sql/getpassword
+var getPassword string
+
+//go:embed sql/findstock
+var findStock string
+
+//go:embed sql/findplayer
+var findPlayer string
+
+//go:embed sql/addplayer
+var addPlayer string
+
+//go:embed sql/deleteplayer
+var deletePlayer string
+
+//go:embed sql/addstock
+var addStock string
+
+//go:embed sql/buy
+var buyStock string
+
+//go:embed sql/sell
+var sellStock string
+
+//go:embed sql/liststocks
+var listStocks string
+
+//go:embed sql/setstockname
+var setStockName string
+
+//go:embed sql/setstockvalue
+var setStockValue string
+
+//go:embed sql/split
+var splitStock string
+
+//go:embed sql/bankrupt
+var bankruptStock string
+
+//go:embed sql/dividend
+var dividendStock string
+
+//go:embed sql/addnews
+var addNews string
+
+//go:embed sql/getnews
+var getNews string
+
+//go:embed sql/addhistory
+var addHistory string
+
+//go:embed sql/gethistory
+var getHistory string
+
+//go:embed sql/getholding
+var getHolding string
+
+//go:embed sql/setholding
+var setHolding string
+
+//go:embed sql/getleaders
+var getLeaders string
+
+//go:embed sql/reset
+var resetGame string
+
+type PlayerHoldings struct {
+	Cash   uint64
+	Shares [stockTypes]uint64
 }
 
 type Stock struct {
@@ -27,26 +104,29 @@ type Stock struct {
 	Value uint64
 }
 
-type GameState struct {
-	Stock    [stockTypes]Stock
-	Player   map[string]*Player
-	News     []string
-	History  []string
-	Key      []byte
-	Previous time.Time
-}
-
 type Game struct {
-	g GameState
-	sync.Mutex
-	changed chan<- struct{}
+	db                          *sql.DB
+	getGame, setGame            *sql.Stmt
+	getPassword, setPassword    *sql.Stmt
+	findStockIndex              *sql.Stmt
+	addPlayer                   *sql.Stmt
+	findPlayer, deletePlayer    *sql.Stmt
+	getHolding, getLeaders      *sql.Stmt
+	setHolding                  *sql.Stmt
+	addStock                    *sql.Stmt
+	setStockName, setStockValue *sql.Stmt
+	splitStock, bankruptStock   *sql.Stmt
+	dividendStock               *sql.Stmt
+	buy, sell                   *sql.Stmt
+	listStocks                  *sql.Stmt
+	getNews, addNews            *sql.Stmt
+	getHistory, addHistory      *sql.Stmt
+	resetGame                   *sql.Stmt
 }
 
 type PlayerInfo struct {
-	Cash   uint64
-	Shares [stockTypes]uint64
-	p      *Player
-	g      *Game
+	playerID int
+	g        *Game
 }
 
 type LeaderInfo struct {
@@ -54,140 +134,222 @@ type LeaderInfo struct {
 	Worth uint64
 }
 
-var ping struct{}
+func (g *Game) findStock(tx *sql.Tx, stock string) int {
+	index := -1
+	r := tx.Stmt(g.findStockIndex).QueryRow(stock)
+	r.Scan(&index)
+	return index
+}
 
-func (g *GameState) findStock(stock string) int {
-	for k, v := range g.Stock {
-		if v.Name == stock {
-			return k
-		}
+func isBusy(err error) bool {
+	serr, ok := err.(*sqlite.Error)
+	if !ok {
+		return false
 	}
-	return -1
+	return serr.Code() == sqlite3.SQLITE_BUSY
 }
 
 func (p *PlayerInfo) Buy(stock string, lots uint64) error {
-	p.g.Lock()
-	defer p.g.Unlock()
-
-	idx := p.g.g.findStock(stock)
-	if idx < 0 {
-		return fmt.Errorf("%s is not on the market", stock)
-	}
-
+	var tx *sql.Tx
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
 	shares := lots * 100
-	afford := p.p.Cash / p.g.g.Stock[idx].Value
-	if shares > afford {
-		return fmt.Errorf("You don't have enough cash to buy %d shares of %s", shares, stock)
+	for {
+		tx, _ = p.g.db.Begin()
+		idx := p.g.findStock(tx, stock)
+		if idx < 0 {
+			return fmt.Errorf("%s is not on the market", stock)
+		}
+
+		r := tx.Stmt(p.g.buy).QueryRow(p.playerID, idx, shares)
+		var cash int64
+		err := r.Scan(&cash)
+		if err != nil {
+			if isBusy(err) {
+				tx.Rollback()
+				continue
+			}
+			return err
+		}
+		if cash < 0 {
+			return fmt.Errorf("You don't have enough cash to buy %d shares of %s", lots*100, stock)
+		}
+		err = tx.Commit()
+		if isBusy(err) {
+			tx.Rollback()
+			continue
+		}
+		if err == nil {
+			tx.Commit()
+		}
+		return err
 	}
-
-	p.p.Cash -= shares * p.g.g.Stock[idx].Value
-	p.p.Shares[idx] += shares
-
-	p.g.changed <- ping
-
-	// Update caller-visible copies
-	p.Cash = p.p.Cash
-	p.Shares[idx] = p.p.Shares[idx]
-	return nil
 }
 
 func (p *PlayerInfo) Sell(stock string, lots uint64) error {
-	p.g.Lock()
-	defer p.g.Unlock()
-
-	idx := p.g.g.findStock(stock)
-	if idx < 0 {
-		return fmt.Errorf("%s is not on the market", stock)
-	}
-
+	var tx *sql.Tx
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
 	shares := lots * 100
-	if shares > p.p.Shares[idx] {
-		return fmt.Errorf("You don't have %d shares of %s to sell", shares, stock)
+	for {
+		tx, _ = p.g.db.Begin()
+		idx := p.g.findStock(tx, stock)
+		if idx < 0 {
+			return fmt.Errorf("%s is not on the market", stock)
+		}
+
+		r := tx.Stmt(p.g.sell).QueryRow(p.playerID, idx, shares)
+		sharesRemain := int64(-1)
+		err := r.Scan(&sharesRemain)
+		if err != nil && err != sql.ErrNoRows {
+			if isBusy(err) {
+				tx.Rollback()
+				continue
+			}
+			return err
+		}
+		if sharesRemain < 0 {
+			return fmt.Errorf("You don't have %d shares of %s to sell", shares, stock)
+		}
+		err = tx.Commit()
+		if isBusy(err) {
+			tx.Rollback()
+			continue
+		}
+		if err == nil {
+			tx.Commit()
+		}
+		return err
 	}
+}
 
-	p.p.Cash += shares * p.g.g.Stock[idx].Value
-	p.p.Shares[idx] -= shares
-
-	p.g.changed <- ping
-
-	// Update caller-visible copies
-	p.Cash = p.p.Cash
-	p.Shares[idx] = p.p.Shares[idx]
-	return nil
+func (p *PlayerInfo) Holdings() PlayerHoldings {
+	var rv PlayerHoldings
+	r := p.g.getHolding.QueryRow(p.playerID, "Cash")
+	r.Scan(&rv.Cash)
+	for i := 1; i <= stockTypes; i++ {
+		r = p.g.getHolding.QueryRow(p.playerID, i)
+		r.Scan(&rv.Shares[i-1])
+	}
+	return rv
 }
 
 func (g *Game) ListStocks() []Stock {
-	g.Lock()
-	defer g.Unlock()
-	rv := make([]Stock, len(g.g.Stock))
-	copy(rv, g.g.Stock[:])
+	rv := make([]Stock, 0)
+	r, err := g.listStocks.Query()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer r.Close()
+	for r.Next() {
+		var s Stock
+		r.Scan(&s.Name, &s.Value)
+		rv = append(rv, s)
+	}
+	return rv
+}
+
+func getStrings(s *sql.Stmt) []string {
+	rv := make([]string, 0)
+	r, err := s.Query()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer r.Close()
+	for r.Next() {
+		var s string
+		r.Scan(&s)
+		rv = append(rv, s)
+	}
 	return rv
 }
 
 func (g *Game) History() []string {
-	g.Lock()
-	defer g.Unlock()
-
-	return g.g.History
+	return getStrings(g.getHistory)
 }
 
 func (g *Game) HasPlayer(name string) bool {
-	g.Lock()
-	_, ok := g.g.Player[name]
-	g.Unlock()
-	return ok
+	return g.Player(name) != nil
 }
 
 func (g *Game) DeletePlayer(name string) bool {
-	g.Lock()
-	defer g.Unlock()
-	_, ok := g.g.Player[name]
-	delete(g.g.Player, name)
-	return ok
+	tx, err := g.db.Begin()
+	if err != nil {
+		return false
+	}
+	defer tx.Rollback()
+	idx := -1
+	r := tx.Stmt(g.findPlayer).QueryRow(name)
+	err = r.Scan(&idx)
+	if err != nil {
+		return false
+	}
+	_, err = tx.Stmt(g.deletePlayer).Exec(idx)
+	if err != nil {
+		return false
+	}
+	tx.Commit()
+	return true
 }
 
 func (g *Game) Player(name string) *PlayerInfo {
-	g.Lock()
-	defer g.Unlock()
-
-	if _, ok := g.g.Player[name]; !ok {
-		p := &Player{Cash: startingCash}
-		g.g.Player[name] = p
-		g.changed <- ping
+	rv := PlayerInfo{g: g}
+	r := g.findPlayer.QueryRow(name)
+	err := r.Scan(&rv.playerID)
+	if err != nil {
+		return nil
 	}
-	p := g.g.Player[name]
+	return &rv
+}
 
-	return &PlayerInfo{Cash: p.Cash, Shares: p.Shares, p: p, g: g}
+func (g *Game) NewPlayer(name string) *PlayerInfo {
+	rv := PlayerInfo{g: g, playerID: -1}
+	r := g.addPlayer.QueryRow(name)
+	err := r.Scan(&rv.playerID)
+	if err != nil || rv.playerID < 0 {
+		return nil
+	}
+	g.setHolding.Exec(rv.playerID, "Cash", startingCash)
+	return &rv
 }
 
 func (g *Game) Leaders() []LeaderInfo {
-	g.Lock()
-	defer g.Unlock()
-	return g.g.Leaders()
-}
-func (g *GameState) Leaders() []LeaderInfo {
-	l := make([]LeaderInfo, 0, len(g.Player))
-	for name, p := range g.Player {
-		li := LeaderInfo{Name: name, Worth: p.Cash}
-		for i, num := range p.Shares {
-			li.Worth += num * g.Stock[i].Value
-		}
-		l = append(l, li)
+	var rv []LeaderInfo
+	r, err := g.getLeaders.Query()
+	if err != nil {
+		return rv
 	}
-	return l
+	defer r.Close()
+	for r.Next() {
+		var li LeaderInfo
+		r.Scan(&li.Name, &li.Worth)
+		rv = append(rv, li)
+	}
+	return rv
 }
 
 func (g *Game) News() []string {
-	g.Lock()
-	defer g.Unlock()
-	return g.g.News
+	return getStrings(g.getNews)
 }
 
-func (g *GameState) pickName() string {
+func (g *Game) pickName(t *sql.Tx) string {
 	names := [...]string{"Coffee", "Soybeans", "Corn", "Wheat", "Cocoa", "Gold", "Silver", "Platinum", "Oil", "Natural Gas", "Cotton", "Sugar"}
 	used := make(map[string]bool)
-	for _, v := range g.Stock {
-		used[v.Name] = true
+	r, err := t.Stmt(g.listStocks).Query()
+	if err == nil {
+		defer r.Close()
+		for r.Next() {
+			var name string
+			var value int
+			r.Scan(&name, &value)
+			used[name] = true
+		}
 	}
 	for {
 		i := rand.Intn(len(names))
@@ -197,57 +359,99 @@ func (g *GameState) pickName() string {
 	}
 }
 
-func (g *GameState) reset() {
-	for i := 0; i < stockTypes; i++ {
-		g.Stock[i].Name = ""
+func (g *Game) reset(t *sql.Tx) {
+	s := g.resetGame
+	if t != nil {
+		s = t.Stmt(s)
 	}
-	for i := 0; i < stockTypes; i++ {
-		g.Stock[i].Value = startingValue
-		g.Stock[i].Name = g.pickName()
+	s.Exec(startingCash)
+	s = g.addStock
+	if t != nil {
+		s = t.Stmt(s)
 	}
-	for _, p := range g.Player {
-		p.Cash = startingCash
-		for i := range p.Shares {
-			p.Shares[i] = 0
-		}
+	for i := 1; i <= stockTypes; i++ {
+		s.Exec(i, g.pickName(t), startingValue)
 	}
-	g.News = append(g.News, "A new season started")
+}
+
+func mustPrepare(db *sql.DB, stmt string) *sql.Stmt {
+	s, err := db.Prepare(stmt)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return s
+}
+
+func (g *Game) getKey() []byte {
+	r := g.getGame.QueryRow("Key")
+	var rv []byte
+	err := r.Scan(&rv)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return rv
 }
 
 func New(data string) *Game {
 	rand.Seed(GetSeed())
 
 	var g Game
-	changed := make(chan struct{})
-	g.changed = changed
 
-	f, err := os.Open(data)
+	db, err := sql.Open("sqlite", data)
+	if err != nil {
+		log.Fatal(err)
+	}
+	g.db = db
+
+	// check contents of db here
+	rows, err := db.Query(string(getGame), "Key")
+	valid := false
 	if err == nil {
-		defer f.Close()
-		err = gob.NewDecoder(f).Decode(&g.g)
-		if err == nil {
-			// Migrate from previous format
-			if g.g.Previous.IsZero() {
-				g.g.Previous = time.Now().UTC()
-			}
-			if g.g.History == nil {
-				g.g.History = make([]string, 0)
-			}
-			go watcher(&g, data, changed)
-			return &g
+		valid = rows.Next()
+		var key []byte
+		rows.Scan(&key)
+		if len(key) < 10 {
+			valid = false
+		}
+		rows.Close()
+	}
+	if !valid {
+		_, err = db.Exec(sqlCreate)
+		if err != nil {
+			log.Fatal(err)
 		}
 	}
+	g.getGame = mustPrepare(db, getGame)
+	g.setGame = mustPrepare(db, setGame)
+	g.setPassword = mustPrepare(db, setPassword)
+	g.getPassword = mustPrepare(db, getPassword)
+	g.findStockIndex = mustPrepare(db, findStock)
+	g.addPlayer = mustPrepare(db, addPlayer)
+	g.findPlayer = mustPrepare(db, findPlayer)
+	g.deletePlayer = mustPrepare(db, deletePlayer)
+	g.addStock = mustPrepare(db, addStock)
+	g.buy = mustPrepare(db, buyStock)
+	g.sell = mustPrepare(db, sellStock)
+	g.listStocks = mustPrepare(db, listStocks)
+	g.setStockName = mustPrepare(db, setStockName)
+	g.setStockValue = mustPrepare(db, setStockValue)
+	g.splitStock = mustPrepare(db, splitStock)
+	g.bankruptStock = mustPrepare(db, bankruptStock)
+	g.dividendStock = mustPrepare(db, dividendStock)
+	g.addNews = mustPrepare(db, addNews)
+	g.getNews = mustPrepare(db, getNews)
+	g.addHistory = mustPrepare(db, addHistory)
+	g.getHistory = mustPrepare(db, getHistory)
+	g.getHolding = mustPrepare(db, getHolding)
+	g.setHolding = mustPrepare(db, setHolding)
+	g.getLeaders = mustPrepare(db, getLeaders)
+	g.resetGame = mustPrepare(db, resetGame)
+	if !valid {
+		g.setGame.Exec("Key", newKey())
+		g.reset(nil)
+	}
 
-	// File not found or gob invalid
-	g.g.Player = make(map[string]*Player)
-	g.g.News = make([]string, 0)
-	g.g.History = make([]string, 0)
-	g.g.newKey()
-	g.g.Previous = time.Now().UTC()
-	g.g.reset()
-
-	go watcher(&g, data, changed)
-	g.changed <- ping
+	go watcher(&g)
 
 	return &g
 }
