@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"embed"
 	"encoding/base64"
 	"fmt"
@@ -86,7 +87,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if len(token) > 0 {
 		// New user
-		if len(name) < 1 || token != inviteHash(h.g, name) {
+		if len(name) < 1 || subtle.ConstantTimeCompare([]byte(token), []byte(inviteHash(h.g, name))) != 1 {
 			h.err.Execute(w, &errorReason{"Invalid invitation"})
 			return
 		}
@@ -198,7 +199,7 @@ type inviter struct {
 func (i *inviter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	name := r.FormValue("name")
 	token := r.FormValue("i")
-	if len(name) < 1 || token != inviteHash(i.g, name) {
+	if len(name) < 1 || subtle.ConstantTimeCompare([]byte(token), []byte(inviteHash(i.g, name))) != 1 {
 		i.err.Execute(w, &errorReason{"Invalid invitation"})
 		return
 	}
