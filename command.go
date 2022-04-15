@@ -12,6 +12,7 @@ var command = []struct {
 }{
 	{f: start, name: "start", desc: "Start a web server to run the game"},
 	{f: passwd, name: "passwd", desc: "<user> <password> Set a user's password"},
+	{f: passwd, name: "adduser", desc: "<user> <password> Add a new user"},
 }
 
 func usage() {

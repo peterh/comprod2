@@ -310,13 +310,24 @@ func (g *Game) Player(name string) *PlayerInfo {
 
 func (g *Game) NewPlayer(name string) *PlayerInfo {
 	rv := PlayerInfo{g: g, playerID: -1}
-	r := g.addPlayer.QueryRow(name)
-	err := r.Scan(&rv.playerID)
-	if err != nil || rv.playerID < 0 {
-		return nil
+	for {
+		tx, _ := g.db.Begin()
+		r := tx.Stmt(g.addPlayer).QueryRow(name)
+		err := r.Scan(&rv.playerID)
+		if err != nil && isBusy(err) {
+			tx.Rollback()
+			continue
+		}
+		if err != nil || rv.playerID < 0 {
+			tx.Rollback()
+			return nil
+		}
+		tx.Stmt(g.setHolding).Exec(rv.playerID, "Cash", startingCash)
+		if tx.Commit() == nil {
+			return &rv
+		}
+		tx.Rollback()
 	}
-	g.setHolding.Exec(rv.playerID, "Cash", startingCash)
-	return &rv
 }
 
 func (g *Game) Leaders() []LeaderInfo {

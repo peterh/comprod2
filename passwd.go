@@ -16,9 +16,16 @@ func passwd() {
 	}
 	game := state.New(*data)
 	defer game.Close()
-	p := game.Player(user)
+	var p *state.PlayerInfo
+	errmsg := "No such user:"
+	if flag.Arg(0) == "adduser" {
+		p = game.NewPlayer(user)
+		errmsg = "Cannot add user:"
+	} else {
+		p = game.Player(user)
+	}
 	if p == nil {
-		fmt.Println("No such user:", user)
+		fmt.Println(errmsg, user)
 		return
 	}
 	p.SetPassword(password)
