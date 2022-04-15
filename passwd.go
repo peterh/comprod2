@@ -14,7 +14,11 @@ func passwd() {
 		flag.Usage()
 		return
 	}
-	game := state.New(*data)
+	game := state.Open(*data)
+	if game == nil {
+		fmt.Println("Unable to open game", *data)
+		return
+	}
 	defer game.Close()
 	var p *state.PlayerInfo
 	errmsg := "No such user:"

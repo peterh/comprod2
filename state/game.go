@@ -403,35 +403,8 @@ func (g *Game) getKey() []byte {
 	return rv
 }
 
-func New(data string) *Game {
-	rand.Seed(GetSeed())
-
-	var g Game
-
-	db, err := sql.Open("sqlite", data)
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.db = db
-
-	// check contents of db here
-	rows, err := db.Query(string(getGame), "Key")
-	valid := false
-	if err == nil {
-		valid = rows.Next()
-		var key []byte
-		rows.Scan(&key)
-		if len(key) < 10 {
-			valid = false
-		}
-		rows.Close()
-	}
-	if !valid {
-		_, err = db.Exec(sqlCreate)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
+func (g *Game) prepareAll() {
+	db := g.db
 	g.getGame = mustPrepare(db, getGame)
 	g.setGame = mustPrepare(db, setGame)
 	g.setPassword = mustPrepare(db, setPassword)
@@ -457,14 +430,65 @@ func New(data string) *Game {
 	g.setHolding = mustPrepare(db, setHolding)
 	g.getLeaders = mustPrepare(db, getLeaders)
 	g.resetGame = mustPrepare(db, resetGame)
-	if !valid {
-		g.setGame.Exec("Key", newKey())
-		g.reset(nil)
-	}
+}
 
-	go watcher(&g)
+func Open(data string) *Game {
+	rand.Seed(GetSeed())
+
+	var g Game
+
+	db, err := sql.Open("sqlite", data)
+	if err != nil {
+		log.Fatal(err)
+	}
+	g.db = db
+
+	// check contents of db here
+	row := db.QueryRow(string(getGame), "Key")
+	var key []byte
+	err = row.Scan(&key)
+	if err != nil || len(key) < 10 {
+		db.Close()
+		return nil
+	}
+	g.prepareAll()
 
 	return &g
+}
+
+func Create(data string) *Game {
+	rand.Seed(GetSeed())
+
+	var g Game
+
+	db, err := sql.Open("sqlite", data)
+	if err != nil {
+		log.Fatal(err)
+	}
+	g.db = db
+
+	// check contents of db here
+	row := db.QueryRow(string(getGame), "Key")
+	var key []byte
+	err = row.Scan(&key)
+	if err == nil && len(key) >= 10 {
+		db.Close()
+		return nil
+	}
+	_, err = db.Exec(sqlCreate)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	g.prepareAll()
+	g.setGame.Exec("Key", newKey())
+	g.reset(nil)
+
+	return &g
+}
+
+func (g *Game) Run() {
+	go watcher(g)
 }
 
 func (g *Game) Close() {

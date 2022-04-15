@@ -10,9 +10,10 @@ var command = []struct {
 	name string
 	desc string
 }{
-	{f: start, name: "start", desc: "Start a web server to run the game"},
-	{f: passwd, name: "passwd", desc: "<user> <password> Set a user's password"},
 	{f: passwd, name: "adduser", desc: "<user> <password> Add a new user"},
+	{f: create, name: "create", desc: "Create new empty game"},
+	{f: passwd, name: "passwd", desc: "<user> <password> Set a user's password"},
+	{f: start, name: "start", desc: "Start a web server to run the game"},
 }
 
 func usage() {

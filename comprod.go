@@ -445,7 +445,12 @@ func start() {
 	http.Handle("/static/",
 		http.StripPrefix("/static/",
 			http.FileServer(http.FS(staticfs))))
-	game := state.New(*data)
+	game := state.Open(*data)
+	if game == nil {
+		fmt.Println("Unable to open game", *data)
+		return
+	}
+	game.Run()
 	http.Handle("/", &handler{gameTemplate, errorTemplate, game})
 	http.Handle("/invite", &inviter{inviteTemplate, errorTemplate, game})
 	http.Handle("/newinvite", &newer{newTemplate, errorTemplate, game})
