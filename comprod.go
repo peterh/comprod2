@@ -219,7 +219,7 @@ func (i *inviter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func inviteUrl(game *state.Game, name string) string {
-	return fmt.Sprintf("http://%s%s/invite?name=%s&i=%s\n", *hostname, *port, name, inviteHash(game, name))
+	return fmt.Sprintf("http://%s%s/invite?name=%s&i=%s", *hostname, *port, name, inviteHash(game, name))
 }
 
 type newer struct {
@@ -471,7 +471,6 @@ func start() {
 	http.Handle("/logout", &logouter{game})
 
 	log.Println("comprod started")
-	log.Printf("To start, visit %s\n", inviteUrl(game, *admin))
 
 	log.Fatal(http.ListenAndServe(*port, nil))
 }
