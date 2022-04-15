@@ -207,7 +207,6 @@ func (g *GameState) pickName() string {
 			return names[i]
 		}
 	}
-	return ""
 }
 
 func (g *GameState) reset() {
