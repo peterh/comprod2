@@ -11,6 +11,7 @@ var command = []struct {
 	desc string
 }{
 	{f: passwd, name: "adduser", desc: "<user> <password> Add a new user"},
+	{f: admin, name: "admin", desc: "<user> <true|false> Change admin status of user"},
 	{f: create, name: "create", desc: "Create new empty game"},
 	{f: invite, name: "invite", desc: "<user> Invite a new user to the game"},
 	{f: passwd, name: "passwd", desc: "<user> <password> Set a user's password"},

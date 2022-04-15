@@ -94,6 +94,12 @@ var getHolding string
 //go:embed sql/setholding
 var setHolding string
 
+//go:embed sql/getadmin
+var getAdmin string
+
+//go:embed sql/setadmin
+var setAdmin string
+
 //go:embed sql/getleaders
 var getLeaders string
 
@@ -127,6 +133,7 @@ type Game struct {
 	dividendStock               *sql.Stmt
 	buy, sell                   *sql.Stmt
 	listStocks                  *sql.Stmt
+	getAdmin, setAdmin          *sql.Stmt
 	getNews, addNews            *sql.Stmt
 	getHistory, addHistory      *sql.Stmt
 	resetGame                   *sql.Stmt
@@ -246,6 +253,20 @@ func (p *PlayerInfo) Holdings() PlayerHoldings {
 		r.Scan(&rv.Shares[i-1])
 	}
 	return rv
+}
+
+func (p *PlayerInfo) IsAdmin() bool {
+	r := p.g.getAdmin.QueryRow(p.playerID)
+	rv := false
+	err := r.Scan(&rv)
+	if err != nil {
+		return false
+	}
+	return rv
+}
+
+func (p *PlayerInfo) SetAdmin(is bool) {
+	p.g.setAdmin.Exec(p.playerID, is)
 }
 
 func (g *Game) ListStocks() []Stock {
@@ -453,6 +474,8 @@ func (g *Game) prepareAll() {
 	g.getHolding = mustPrepare(db, getHolding)
 	g.setHolding = mustPrepare(db, setHolding)
 	g.getLeaders = mustPrepare(db, getLeaders)
+	g.getAdmin = mustPrepare(db, getAdmin)
+	g.setAdmin = mustPrepare(db, setAdmin)
 	g.resetGame = mustPrepare(db, resetGame)
 }
 

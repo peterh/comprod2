@@ -1,0 +1,1 @@
+UPDATE Player SET Admin = ?2 WHERE PlayerID = ?1

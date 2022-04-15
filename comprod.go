@@ -3,7 +3,6 @@ package main
 import (
 	"embed"
 	"encoding/base64"
-	"flag"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -27,8 +26,6 @@ type handler struct {
 type errorReason struct {
 	Reason string
 }
-
-var admin = flag.String("admin", "admin", "Name of administrator")
 
 func login(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/static/login.html", 307)
@@ -175,7 +172,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	s := h.g.ListStocks()
 	d := &data{Name: name, News: h.g.News(), Leader: formatInfo(h.g.Leaders(), thinsp)}
-	d.Invite = name == *admin
+	d.Invite = p.IsAdmin()
 	ph := p.Holdings()
 	nw := ph.Cash
 	for k, v := range s {
@@ -244,7 +241,7 @@ func (n *newer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		login(w, r)
 		return
 	}
-	if name != *admin {
+	if !p.IsAdmin() {
 		n.err.Execute(w, &errorReason{"Only the administrator can invite new players"})
 		return
 	}
@@ -289,7 +286,7 @@ func (a *adminer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		login(w, r)
 		return
 	}
-	if name != *admin {
+	if !p.IsAdmin() {
 		a.err.Execute(w, &errorReason{"Only the administrator can access the admin console"})
 		return
 	}
