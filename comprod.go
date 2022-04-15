@@ -397,8 +397,7 @@ func (l *logouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 //go:embed static templates
 var fsbuiltin embed.FS
 
-func main() {
-	flag.Parse()
+func start() {
 	var fsroot fs.FS = fsbuiltin
 	if *root != "" {
 		fsroot = os.DirFS(*root)

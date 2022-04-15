@@ -455,3 +455,7 @@ func New(data string) *Game {
 
 	return &g
 }
+
+func (g *Game) Close() {
+	g.db.Close()
+}
