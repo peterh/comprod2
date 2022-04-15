@@ -393,7 +393,7 @@ func (g *Game) News() []string {
 }
 
 func (g *Game) pickName(t *sql.Tx) string {
-	names := [...]string{"Coffee", "Soybeans", "Corn", "Wheat", "Cocoa", "Gold", "Silver", "Platinum", "Oil", "Natural Gas", "Cotton", "Sugar"}
+	names := [...]string{"Coffee", "Soybeans", "Corn", "Wheat", "Cocoa", "Gold", "Silver", "Platinum", "Oil", "Natural Gas", "Cotton", "Sugar", "Lithium", "Cobalt"}
 	used := make(map[string]bool)
 	r, err := t.Stmt(g.listStocks).Query()
 	if err == nil {
