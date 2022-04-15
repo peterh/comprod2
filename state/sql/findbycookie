@@ -1,0 +1,1 @@
+SELECT Name, PlayerID FROM Player WHERE Cookie = ?1

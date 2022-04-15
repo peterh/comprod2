@@ -117,3 +117,14 @@ func (p *PlayerInfo) CheckPassword(pw string) bool {
 		return false
 	}
 }
+
+func (p *PlayerInfo) NewCookie() []byte {
+	cookie := make([]byte, 256/8)
+	rand.Read(cookie)
+	p.g.setCookie.Exec(p.playerID, cookie)
+	return cookie
+}
+
+func (p *PlayerInfo) ClearCookie() {
+	p.g.setCookie.Exec(p.playerID, nil)
+}

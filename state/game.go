@@ -37,6 +37,12 @@ var findStock string
 //go:embed sql/findplayer
 var findPlayer string
 
+//go:embed sql/findbycookie
+var findPlayerByCookie string
+
+//go:embed sql/setcookie
+var setCookie string
+
 //go:embed sql/addplayer
 var addPlayer string
 
@@ -111,6 +117,8 @@ type Game struct {
 	findStockIndex              *sql.Stmt
 	addPlayer                   *sql.Stmt
 	findPlayer, deletePlayer    *sql.Stmt
+	findPlayerByCookie          *sql.Stmt
+	setCookie                   *sql.Stmt
 	getHolding, getLeaders      *sql.Stmt
 	setHolding                  *sql.Stmt
 	addStock                    *sql.Stmt
@@ -308,6 +316,20 @@ func (g *Game) Player(name string) *PlayerInfo {
 	return &rv
 }
 
+func (g *Game) PlayerByCookie(cookie []byte) (string, *PlayerInfo) {
+	if cookie == nil || len(cookie) < 10 {
+		return "", nil
+	}
+	rv := PlayerInfo{g: g}
+	var name string
+	r := g.findPlayerByCookie.QueryRow(cookie)
+	err := r.Scan(&name, &rv.playerID)
+	if err != nil {
+		return "", nil
+	}
+	return name, &rv
+}
+
 func (g *Game) NewPlayer(name string) *PlayerInfo {
 	rv := PlayerInfo{g: g, playerID: -1}
 	for {
@@ -412,6 +434,8 @@ func (g *Game) prepareAll() {
 	g.findStockIndex = mustPrepare(db, findStock)
 	g.addPlayer = mustPrepare(db, addPlayer)
 	g.findPlayer = mustPrepare(db, findPlayer)
+	g.findPlayerByCookie = mustPrepare(db, findPlayerByCookie)
+	g.setCookie = mustPrepare(db, setCookie)
 	g.deletePlayer = mustPrepare(db, deletePlayer)
 	g.addStock = mustPrepare(db, addStock)
 	g.buy = mustPrepare(db, buyStock)

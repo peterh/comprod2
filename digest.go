@@ -12,10 +12,6 @@ func doHash(g *state.Game, thing, name string) string {
 	return strings.TrimRight(base64.URLEncoding.EncodeToString(sum), "=")
 }
 
-func cookieHash(g *state.Game, name string) string {
-	return doHash(g, "cookie", name)
-}
-
 func inviteHash(g *state.Game, name string) string {
 	return doHash(g, "invite", name)
 }

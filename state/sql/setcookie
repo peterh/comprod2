@@ -1,0 +1,1 @@
+UPDATE Player SET Cookie = ?2 WHERE PlayerID = ?1

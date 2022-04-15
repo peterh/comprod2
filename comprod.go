@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"html/template"
@@ -84,6 +85,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	name := r.FormValue("name")
 	token := r.FormValue("i")
 	pw := r.FormValue("pw")
+	var p *state.PlayerInfo
 
 	if len(token) > 0 {
 		// New user
@@ -91,7 +93,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.err.Execute(w, &errorReason{"Invalid invitation"})
 			return
 		}
-		p := h.g.NewPlayer(name)
+		p = h.g.NewPlayer(name)
 		if p == nil {
 			h.err.Execute(w, &errorReason{"You are already registered"})
 			return
@@ -101,17 +103,19 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		p.SetPassword(pw)
-		http.SetCookie(w, &http.Cookie{Name: "id", Value: name + "/" + cookieHash(h.g, name)})
+		cookie := p.NewCookie()
+		http.SetCookie(w, &http.Cookie{Name: "id", Value: base64.RawURLEncoding.EncodeToString(cookie)})
 	} else if len(name) > 1 {
 		// User login
-		p := h.g.Player(name)
+		p = h.g.Player(name)
 		// Don't do this in real code, by calculating the password hash after checking
 		// for the presence of a user, an attacker can test for the presence of a user.
 		if p == nil || !p.CheckPassword(pw) {
 			h.err.Execute(w, &errorReason{"Invalid password or unknown user"})
 			return
 		}
-		http.SetCookie(w, &http.Cookie{Name: "id", Value: name + "/" + cookieHash(h.g, name)})
+		cookie := p.NewCookie()
+		http.SetCookie(w, &http.Cookie{Name: "id", Value: base64.RawURLEncoding.EncodeToString(cookie)})
 	} else {
 		// Returning user
 		c, err := r.Cookie("id")
@@ -119,23 +123,15 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			login(w, r)
 			return
 		}
-		i := strings.LastIndex(c.Value, "/")
-		if i < 1 {
-			login(w, r)
-			return
+		cookie, err := base64.RawURLEncoding.DecodeString(c.Value)
+		if err == nil {
+			name, p = h.g.PlayerByCookie(cookie)
 		}
-		name = c.Value[:i]
-		if len(name) < 1 || c.Value[i+1:] != cookieHash(h.g, name) {
-			login(w, r)
-			return
-		}
-		if !h.g.HasPlayer(name) {
+		if p == nil {
 			login(w, r)
 			return
 		}
 	}
-
-	p := h.g.Player(name)
 
 	lotsstr := r.FormValue("lots")
 	if len(lotsstr) > 0 {
@@ -238,9 +234,13 @@ func (n *newer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		login(w, r)
 		return
 	}
-	i := strings.LastIndex(c.Value, "/")
-	name := c.Value[:i]
-	if len(name) < 1 || c.Value[i+1:] != cookieHash(n.g, name) {
+	cookie, err := base64.RawURLEncoding.DecodeString(c.Value)
+	if err != nil {
+		login(w, r)
+		return
+	}
+	name, p := n.g.PlayerByCookie(cookie)
+	if len(name) < 1 || p == nil {
 		login(w, r)
 		return
 	}
@@ -279,12 +279,13 @@ func (a *adminer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		login(w, r)
 		return
 	}
-	i := strings.LastIndex(c.Value, "/")
-	name := ""
-	if i >= 0 {
-		name = c.Value[:i]
+	cookie, err := base64.RawURLEncoding.DecodeString(c.Value)
+	if err != nil {
+		login(w, r)
+		return
 	}
-	if len(name) < 1 || c.Value[i+1:] != cookieHash(a.g, name) {
+	name, p := a.g.PlayerByCookie(cookie)
+	if len(name) < 1 || p == nil {
 		login(w, r)
 		return
 	}
@@ -335,14 +336,16 @@ func (np *newpwer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		login(w, r)
 		return
 	}
-	i := strings.LastIndex(c.Value, "/")
-	name := c.Value[:i]
-	if len(name) < 1 || c.Value[i+1:] != cookieHash(np.g, name) {
+	cookie, err := base64.RawURLEncoding.DecodeString(c.Value)
+	if err != nil {
 		login(w, r)
 		return
 	}
-
-	p := np.g.Player(name)
+	name, p := np.g.PlayerByCookie(cookie)
+	if len(name) < 1 || p == nil {
+		login(w, r)
+		return
+	}
 
 	var d struct {
 		Name    string
@@ -387,9 +390,17 @@ func (h *historian) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type logouter struct {
+	g *state.Game
 }
 
 func (l *logouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if c, err := r.Cookie("id"); err == nil {
+		if cookie, err := base64.RawURLEncoding.DecodeString(c.Value); err == nil {
+			if _, p := l.g.PlayerByCookie(cookie); p != nil {
+				p.ClearCookie()
+			}
+		}
+	}
 	http.SetCookie(w, &http.Cookie{Name: "id", Value: ""})
 	login(w, r)
 }
@@ -457,7 +468,7 @@ func start() {
 	http.Handle("/admin", &adminer{adminTemplate, errorTemplate, game})
 	http.Handle("/newpw", &newpwer{newpwTemplate, errorTemplate, game})
 	http.Handle("/history", &historian{historyTemplate, game})
-	http.Handle("/logout", &logouter{})
+	http.Handle("/logout", &logouter{game})
 
 	log.Println("comprod started")
 	log.Printf("To start, visit %s\n", inviteUrl(game, *admin))
