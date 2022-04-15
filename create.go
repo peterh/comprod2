@@ -10,6 +10,7 @@ func create() {
 	g := state.Create(*data)
 	if g == nil {
 		fmt.Println("Unable to create", *data)
+		return
 	}
 	g.Close()
 }
