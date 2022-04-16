@@ -373,9 +373,9 @@ func (g *Game) NewPlayer(name string) *PlayerInfo {
 	}
 }
 
-func (g *Game) Leaders() []LeaderInfo {
+func (g *Game) leaders(t *sql.Tx) []LeaderInfo {
 	var rv []LeaderInfo
-	r, err := g.getLeaders.Query()
+	r, err := t.Stmt(g.getLeaders).Query()
 	if err != nil {
 		return rv
 	}
@@ -386,6 +386,12 @@ func (g *Game) Leaders() []LeaderInfo {
 		rv = append(rv, li)
 	}
 	return rv
+}
+
+func (g *Game) Leaders() []LeaderInfo {
+	t, _ := g.db.Begin()
+	defer t.Rollback()
+	return g.leaders(t)
 }
 
 func (g *Game) News() []string {

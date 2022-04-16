@@ -115,7 +115,7 @@ func (g *Game) newDay() {
 		}
 
 		if now.Month() != prev.Month() {
-			leader := g.Leaders()
+			leader := g.leaders(tx)
 			if len(leader) > 0 {
 				sort.Sort(LeaderSort(leader))
 				announce := fmt.Sprintf("The winner of the %s %d season was %s, with a net worth of $%d",
